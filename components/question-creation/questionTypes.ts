@@ -41,6 +41,14 @@ export function stripHtml(value: string) {
     .trim();
 }
 
+export function stripHtmlKeepMedia(value: string) {
+  return value
+    .replace(/<(?!\/?(img|br)\b)[^>]*>/gi, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function createEmptyQuestionDraft(
   overrides?: Partial<QuestionDraft>,
 ): QuestionDraft {
@@ -64,13 +72,13 @@ export function buildQuestionPayload(draft: QuestionDraft, testId: string) {
 
   return {
     type: "mcq",
-    question: stripHtml(draft.question),
+    question: draft.question,
     option1: stripHtml(optionsById.option1),
     option2: stripHtml(optionsById.option2),
     option3: stripHtml(optionsById.option3),
     option4: stripHtml(optionsById.option4),
     correct_option: draft.correctOptionId,
-    explanation: stripHtml(draft.solution),
+    explanation: draft.solution,
     difficulty: normalizeDifficultyValue(draft.difficulty),
     test_id: testId,
     subject: draft.subjectId,

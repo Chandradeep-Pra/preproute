@@ -1,11 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { getBackendBaseUrl } from "@/lib/backend-config";
+import { getBackendUrl } from "@/lib/backend-config";
 
-const BACKEND_QUESTION_URLS = [
-  `${getBackendBaseUrl()}/questions/fetchBulk`,
-  `${getBackendBaseUrl()}/api/questions/fetchBulk`,
-];
+const BACKEND_QUESTION_PATHS = ["/questions/fetchBulk", "/api/questions/fetchBulk"];
 
 type BackendPayload = {
   success?: boolean;
@@ -34,7 +31,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     let lastResult: { payload: BackendPayload; status: number } | null = null;
 
-    for (const url of BACKEND_QUESTION_URLS) {
+    for (const path of BACKEND_QUESTION_PATHS) {
+      const url = getBackendUrl(path);
       const response = await fetch(url, {
         method: "POST",
         headers: {

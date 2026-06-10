@@ -9,6 +9,7 @@ import QuestionImportModal from "./QuestionImportModal";
 import {
   buildQuestionPayload,
   createEmptyQuestionDraft,
+  stripHtmlKeepMedia,
   type QuestionDraft,
 } from "./questionTypes";
 import {
@@ -232,7 +233,7 @@ export default function QuestionCreationClient() {
       return;
     }
 
-    const questionText = draft.question.replace(/<[^>]*>/g, "").trim();
+    const questionText = stripHtmlKeepMedia(draft.question);
     const optionTexts = draft.options.map((option) => option.text.trim());
 
     if (!questionText) {

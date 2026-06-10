@@ -32,6 +32,26 @@ type TestDetailRecord = Record<string, unknown>;
 
 const TEST_TYPE = "chapterwise";
 
+function normalizeDifficultyForUi(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "hard") {
+    return "difficult";
+  }
+
+  return normalized || "easy";
+}
+
+function normalizeDifficultyForPayload(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "difficult") {
+    return "hard";
+  }
+
+  return normalized || "easy";
+}
+
 function buildInitialState(searchParams: ReturnType<typeof useSearchParams>): ChapterWiseFormState {
   return {
     subjectId: searchParams.get("subjectId") ?? "",
@@ -39,7 +59,7 @@ function buildInitialState(searchParams: ReturnType<typeof useSearchParams>): Ch
     subTopicId: searchParams.get("subTopicId") ?? "",
     testName: searchParams.get("testName") ?? "",
     duration: searchParams.get("duration") ?? "",
-    difficulty: searchParams.get("difficulty") ?? "easy",
+    difficulty: normalizeDifficultyForUi(searchParams.get("difficulty") ?? "easy"),
     marking: {
       wrongAnswer: searchParams.get("wrongMarks") ?? "-1",
       unattempted: searchParams.get("unattemptMarks") ?? "0",
@@ -153,7 +173,9 @@ function mapDetailToState(
     readNumberString(detail.total_time) ||
     readNumberString(detail.duration) ||
     current.duration;
-  const mappedDifficulty = readString(detail.difficulty) || current.difficulty || "easy";
+  const mappedDifficulty = normalizeDifficultyForUi(
+    readString(detail.difficulty) || current.difficulty || "easy",
+  );
   const mappedWrongAnswer =
     normalizeWrongAnswer(detail.wrong_marks ?? detail.wrongAnswer) ||
     current.marking.wrongAnswer;
@@ -505,7 +527,7 @@ export default function ChapterWiseForm() {
       correct_marks: toNumber(state.marking.correctAnswer) ?? 0,
       wrong_marks: toNumber(state.marking.wrongAnswer) ?? 0,
       unattempt_marks: toNumber(state.marking.unattempted) ?? 0,
-      difficulty: state.difficulty,
+      difficulty: normalizeDifficultyForPayload(state.difficulty),
       total_time: toNumber(state.duration) ?? 0,
       total_marks: toNumber(state.marking.totalMarks) ?? 0,
       total_questions: toNumber(state.marking.noOfQuestions) ?? 0,

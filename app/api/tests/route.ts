@@ -1,10 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { getBackendBaseUrl } from "@/lib/backend-config";
+import { getBackendUrl } from "@/lib/backend-config";
 
-const BACKEND_TESTS_URL = `${getBackendBaseUrl()}/tests`;
-const BACKEND_TESTS_FALLBACK_URL = `${getBackendBaseUrl()}/api/tests`;
-const BACKEND_TESTS_CREATE_URLS = [BACKEND_TESTS_URL, BACKEND_TESTS_FALLBACK_URL];
+const BACKEND_TESTS_PATHS = ["/tests", "/api/tests"];
 
 type BackendPayload = {
   success?: boolean;
@@ -19,8 +17,8 @@ function isSuccessful(payload: BackendPayload | null) {
 }
 
 async function fetchBackendTests(token: string) {
-  for (const url of BACKEND_TESTS_CREATE_URLS) {
-    const response = await fetch(url, {
+  for (const path of BACKEND_TESTS_PATHS) {
+    const response = await fetch(getBackendUrl(path), {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -45,8 +43,8 @@ async function fetchBackendTests(token: string) {
 async function createBackendTest(token: string, body: unknown) {
   let lastResult: { payload: BackendPayload; status: number } | null = null;
 
-  for (const url of BACKEND_TESTS_CREATE_URLS) {
-    const response = await fetch(url, {
+  for (const path of BACKEND_TESTS_PATHS) {
+    const response = await fetch(getBackendUrl(path), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -62,7 +60,7 @@ async function createBackendTest(token: string, body: unknown) {
       : { message: await response.text() };
 
     console.log("BACKEND CREATE TEST ATTEMPT", {
-      url,
+      url: getBackendUrl(path),
       status: response.status,
       ok: response.ok,
       payload,
@@ -73,10 +71,7 @@ async function createBackendTest(token: string, body: unknown) {
       return { payload, status: response.status };
     }
 
-    lastResult = {
-      payload,
-      status: response.status,
-    };
+    lastResult = { payload, status: response.status };
   }
 
   return lastResult;
@@ -148,12 +143,15 @@ export async function POST(request: Request) {
       (isSuccessful(payload) ? "Test created successfully" : "Unable to create test.");
     const errors = payload?.errors ?? null;
 
-    return NextResponse.json({
-      success: isSuccessful(payload),
-      data: payload?.data ?? {},
-      message,
-      errors,
-    }, { status });
+    return NextResponse.json(
+      {
+        success: isSuccessful(payload),
+        data: payload?.data ?? {},
+        message,
+        errors,
+      },
+      { status },
+    );
   } catch (error) {
     return NextResponse.json(
       {

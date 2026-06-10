@@ -44,7 +44,7 @@ export default function PreviewQuestionCard({
             Question {index}
           </p>
           <div
-            className="prose prose-slate max-w-none text-sm"
+            className="prose prose-slate max-w-none text-sm [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-xl"
             dangerouslySetInnerHTML={{ __html: question.question ?? "" }}
           />
         </div>
@@ -82,7 +82,7 @@ export default function PreviewQuestionCard({
             Solution
           </p>
           <div
-            className="prose prose-slate mt-2 max-w-none text-sm"
+            className="prose prose-slate mt-2 max-w-none text-sm [&_img]:my-3 [&_img]:max-w-full [&_img]:rounded-xl"
             dangerouslySetInnerHTML={{ __html: question.explanation }}
           />
         </div>

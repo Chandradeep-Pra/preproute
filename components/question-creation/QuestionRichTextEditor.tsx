@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, type ChangeEvent } from "react";
 import {
   AlignCenter,
   AlignJustify,
@@ -33,6 +33,7 @@ export default function QuestionRichTextEditor({
   onChange,
   placeholder = "Type here",
 }: QuestionRichTextEditorProps) {
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -47,7 +48,9 @@ export default function QuestionRichTextEditor({
       TextAlign.configure({
         types: ["paragraph"],
       }),
-      Image,
+      Image.configure({
+        allowBase64: true,
+      }),
       Placeholder.configure({
         placeholder,
       }),
@@ -92,9 +95,25 @@ export default function QuestionRichTextEditor({
   };
 
   const insertImage = () => {
-    const url = window.prompt("Image URL");
-    if (!url) return;
-    editor.chain().focus().setImage({ src: url }).run();
+    imageInputRef.current?.click();
+  };
+
+  const handleImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : "";
+      if (src) {
+        editor.chain().focus().setImage({ src }).run();
+      }
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
   };
 
   return (
@@ -145,6 +164,13 @@ export default function QuestionRichTextEditor({
       </div>
 
       <div className="relative">
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageChange}
+        />
         <EditorContent editor={editor} />
         <button
           type="button"
@@ -175,6 +201,13 @@ export default function QuestionRichTextEditor({
         }
         .ProseMirror p {
           margin: 0.5rem 0;
+        }
+        .ProseMirror img {
+          display: block;
+          max-width: 100%;
+          height: auto;
+          margin: 0.75rem 0;
+          border-radius: 0.75rem;
         }
         .ProseMirror p.is-editor-empty:first-child::before {
           color: rgb(148 163 184);
