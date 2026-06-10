@@ -73,7 +73,7 @@ function formatBackendErrors(errors: unknown) {
   return "Validation failed.";
 }
 
-type QuestionRecord = Record<string, unknown>;
+type QuestionRecord = Record<string, unknown> & { id?: string };
 
 function readQuestionNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -99,7 +99,7 @@ function readQuestionNumber(value: unknown): number | null {
   return null;
 }
 
-async function loadExistingQuestionNumbers(testId: string) {
+async function loadExistingQuestions(testId: string) {
   const testResponse = await fetch(`/api/tests/${testId}`, { cache: "no-store" });
   const testPayload = (await testResponse.json()) as {
     success?: boolean;
@@ -133,11 +133,7 @@ async function loadExistingQuestionNumbers(testId: string) {
     throw new Error(questionPayload.message ?? "Unable to load questions.");
   }
 
-  const numbers = (questionPayload.data ?? [])
-    .map((question, index) => readQuestionNumber(question) ?? index + 1)
-    .filter((value): value is number => Number.isFinite(value));
-
-  return Array.from(new Set(numbers)).sort((a, b) => a - b);
+  return questionPayload.data ?? [];
 }
 
 export default function QuestionCreationClient() {
@@ -167,21 +163,64 @@ export default function QuestionCreationClient() {
   const testName = searchParams.get("testName") ?? searchParams.get("name") ?? "";
   const existingQuestionsQuery = useQuery({
     queryKey: ["existing-test-questions", testId],
-    queryFn: () => loadExistingQuestionNumbers(testId),
+    queryFn: () => loadExistingQuestions(testId),
     enabled: Boolean(testId),
   });
-  const allExistingQuestionNumbers = useMemo(
+  const existingQuestionMap = useMemo(() => {
+    const map = new Map<
+      number,
+      {
+        id: string;
+        questionNo: number;
+      }
+    >();
+
+    for (const question of existingQuestionsQuery.data ?? []) {
+      const questionNo = readQuestionNumber(question);
+      const id = typeof question.id === "string" ? question.id : "";
+
+      if (questionNo && id) {
+        map.set(questionNo, { id, questionNo });
+      }
+    }
+
+    return map;
+  }, [existingQuestionsQuery.data]);
+
+  const allCompletedQuestionNumbers = useMemo(
     () =>
       Array.from(
-        new Set([...(existingQuestionsQuery.data ?? []), ...completedQuestions]),
+        new Set([
+          ...Array.from(existingQuestionMap.keys()),
+          ...completedQuestions,
+        ]),
       ).sort((a, b) => a - b),
-    [completedQuestions, existingQuestionsQuery.data],
+    [completedQuestions, existingQuestionMap],
   );
 
   const getPreviewHref = () => {
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("testId", testId);
     return `/test-creation/question-creation/preview-publish?${nextParams.toString()}`;
+  };
+
+  const goToPreviewPublish = () => {
+    if (!testId) {
+      toast.error("Test id is missing.");
+      return;
+    }
+
+    if (allCompletedQuestionNumbers.length < totalQuestions) {
+      const shouldContinue = window.confirm(
+        `Only ${allCompletedQuestionNumbers.length} of ${totalQuestions} questions are completed. Continue to preview and publish anyway?`,
+      );
+
+      if (!shouldContinue) {
+        return;
+      }
+    }
+
+    router.push(getPreviewHref());
   };
 
   const currentDraft =
@@ -260,29 +299,61 @@ export default function QuestionCreationClient() {
 
     try {
       const sortedRows = [...rows].sort((a, b) => a.questionNo - b.questionNo);
-      const response = await fetch("/api/questions/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          questions: sortedRows.map((row) => buildImportQuestionPayload(row, testId, subjectId)),
-        }),
-      });
+      const rowsToUpdate = sortedRows.filter((row) => existingQuestionMap.has(row.questionNo));
+      const rowsToCreate = sortedRows.filter((row) => !existingQuestionMap.has(row.questionNo));
 
-      const result = (await response.json()) as {
-        success?: boolean;
-        message?: string;
-        data?: unknown[];
-        errors?: unknown;
-      };
+      for (const row of rowsToUpdate) {
+        const existingQuestion = existingQuestionMap.get(row.questionNo);
+        if (!existingQuestion) {
+          continue;
+        }
 
-      if (!response.ok || !result.success) {
-        const backendMessage = formatBackendErrors(result.errors);
-        throw new Error(backendMessage || result.message || "Unable to import questions.");
+        const updateResponse = await fetch(`/api/questions/${existingQuestion.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildImportQuestionPayload(row, testId, subjectId)),
+        });
+
+        const updateResult = (await updateResponse.json()) as {
+          success?: boolean;
+          message?: string;
+          errors?: unknown;
+        };
+
+        if (!updateResponse.ok || !updateResult.success) {
+          const backendMessage = formatBackendErrors(updateResult.errors);
+          throw new Error(backendMessage || updateResult.message || "Unable to update question.");
+        }
+      }
+
+      if (rowsToCreate.length > 0) {
+        const response = await fetch("/api/questions/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            questions: rowsToCreate.map((row) =>
+              buildImportQuestionPayload(row, testId, subjectId),
+            ),
+          }),
+        });
+
+        const result = (await response.json()) as {
+          success?: boolean;
+          message?: string;
+          data?: unknown[];
+          errors?: unknown;
+        };
+
+        if (!response.ok || !result.success) {
+          const backendMessage = formatBackendErrors(result.errors);
+          throw new Error(backendMessage || result.message || "Unable to import questions.");
+        }
+
       }
 
       const importedNumbers = sortedRows.map((row) => row.questionNo);
       const nextCompletedQuestions = Array.from(
-        new Set([...completedQuestions, ...importedNumbers]),
+        new Set([...allCompletedQuestionNumbers, ...importedNumbers]),
       ).sort((a, b) => a - b);
 
       setCompletedQuestions(nextCompletedQuestions);
@@ -293,8 +364,15 @@ export default function QuestionCreationClient() {
         }
         return next;
       });
-      setActiveQuestion(Math.min(Math.max(...importedNumbers) + 1, totalQuestions));
-      toast.success(result.message ?? "Questions imported successfully");
+      const nextQuestionNo = Math.max(...importedNumbers);
+      setActiveQuestion(Math.min(nextQuestionNo + 1, totalQuestions));
+      toast.success(
+        rowsToUpdate.length > 0 && rowsToCreate.length > 0
+          ? "Questions updated and imported successfully"
+          : rowsToUpdate.length > 0
+            ? "Questions updated successfully"
+            : "Questions imported successfully",
+      );
       setIsImportOpen(false);
 
       if (nextCompletedQuestions.length >= totalQuestions) {
@@ -360,7 +438,7 @@ export default function QuestionCreationClient() {
 
       toast.dismiss(loadingToastId);
       const nextCompletedQuestions = Array.from(
-        new Set([...completedQuestions, activeQuestion]),
+        new Set([...allCompletedQuestionNumbers, activeQuestion]),
       ).sort((a, b) => a - b);
 
       setCompletedQuestions(nextCompletedQuestions);
@@ -402,7 +480,7 @@ export default function QuestionCreationClient() {
         <QuestionSidebar
           totalQuestions={totalQuestions}
           activeQuestion={activeQuestion}
-          completedQuestions={completedQuestions}
+          completedQuestions={allCompletedQuestionNumbers}
           onSelectQuestion={setActiveQuestion}
         />
 
@@ -419,6 +497,7 @@ export default function QuestionCreationClient() {
           onDraftChange={updateCurrentDraft}
           onSaveQuestion={handleSaveQuestion}
           onOpenImport={() => setIsImportOpen(true)}
+          onPreviewPublish={goToPreviewPublish}
           isSaving={isSaving}
           totalTime={totalTime}
           totalMarks={totalMarks}
@@ -434,7 +513,7 @@ export default function QuestionCreationClient() {
         templateHref="/question_book.xlsx"
         currentTotalQuestions={totalQuestions}
         currentTotalMarks={totalMarks}
-        existingQuestionNumbers={allExistingQuestionNumbers}
+        existingQuestionNumbers={allCompletedQuestionNumbers}
         onIncreaseTotals={handleIncreaseTotals}
         onImportRows={handleImportRows}
       />

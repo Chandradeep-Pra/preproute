@@ -29,6 +29,7 @@ type QuestionWorkspaceProps = {
   draft: QuestionDraft;
   onDraftChange: (draft: QuestionDraft) => void;
   onSaveQuestion: (draft: QuestionDraft) => Promise<void>;
+  onPreviewPublish: () => void;
   onOpenImport: () => void;
   isSaving?: boolean;
   totalTime: number;
@@ -54,6 +55,7 @@ export default function QuestionWorkspace({
   draft,
   onDraftChange,
   onSaveQuestion,
+  onPreviewPublish,
   onOpenImport,
   isSaving = false,
   totalTime,
@@ -356,14 +358,23 @@ export default function QuestionWorkspace({
         <button className="rounded-xl bg-[#FF8B8B] px-4 py-3 text-sm font-semibold text-white">
           Exit Test Creation
         </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="rounded-xl bg-[#6E83F6] px-6 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {isSaving ? "Saving..." : "Save Question"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onPreviewPublish}
+            className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Preview & Publish
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="rounded-xl bg-[#6E83F6] px-6 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isSaving ? "Saving..." : "Save Question"}
+          </button>
+        </div>
       </div>
     </div>
   );
