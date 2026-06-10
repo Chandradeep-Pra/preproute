@@ -1,0 +1,102 @@
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { getBackendBaseUrl } from "@/lib/backend-config";
+
+const BACKEND_QUESTION_URLS = [
+  `${getBackendBaseUrl()}/questions/fetchBulk`,
+  `${getBackendBaseUrl()}/api/questions/fetchBulk`,
+];
+
+type BackendPayload = {
+  success?: boolean;
+  status?: string;
+  data?: unknown;
+  message?: string;
+  errors?: unknown;
+};
+
+function isSuccessful(payload: BackendPayload | null) {
+  return payload?.success === true || payload?.status === "success";
+}
+
+export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("preproute_session")?.value;
+
+  if (!token) {
+    return NextResponse.json(
+      { success: false, message: "Unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  try {
+    const body = await request.json();
+    let lastResult: { payload: BackendPayload; status: number } | null = null;
+
+    for (const url of BACKEND_QUESTION_URLS) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const payload = contentType.includes("application/json")
+        ? ((await response.json()) as BackendPayload)
+        : { message: await response.text() };
+
+      console.log("BACKEND QUESTION FETCH BULK ATTEMPT", {
+        url,
+        status: response.status,
+        ok: response.ok,
+        payload,
+        body,
+      });
+
+      if (response.ok && isSuccessful(payload)) {
+        return NextResponse.json(
+          {
+            success: true,
+            data: payload.data ?? [],
+            message: payload.message ?? "Questions fetched successfully",
+            errors: payload.errors ?? null,
+          },
+          { status: response.status },
+        );
+      }
+
+      lastResult = { payload, status: response.status };
+    }
+
+    if (!lastResult) {
+      return NextResponse.json(
+        { success: false, message: "Unable to load questions." },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        data: lastResult.payload.data ?? [],
+        message: lastResult.payload.message ?? "Unable to load questions.",
+        errors: lastResult.payload.errors ?? null,
+      },
+      { status: lastResult.status },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          error instanceof Error ? error.message : "Unable to load questions.",
+      },
+      { status: 502 },
+    );
+  }
+}
