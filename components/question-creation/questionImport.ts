@@ -104,7 +104,8 @@ export async function parseQuestionWorkbook(file: File) {
 
       return imported;
     })
-    .filter((row) => Boolean(row.question));
+    .filter((row) => Boolean(row.question))
+    .sort((a, b) => a.questionNo - b.questionNo);
 }
 
 export function importedRowToDraft(

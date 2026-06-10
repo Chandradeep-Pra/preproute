@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import QuestionSidebar from "./QuestionSidebar";
 import QuestionWorkspace from "./QuestionWorkspace";
@@ -72,6 +73,73 @@ function formatBackendErrors(errors: unknown) {
   return "Validation failed.";
 }
 
+type QuestionRecord = Record<string, unknown>;
+
+function readQuestionNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as QuestionRecord;
+    return (
+      readQuestionNumber(record.question_no) ??
+      readQuestionNumber(record.questionNo) ??
+      readQuestionNumber(record.question_number) ??
+      readQuestionNumber(record.number) ??
+      null
+    );
+  }
+
+  return null;
+}
+
+async function loadExistingQuestionNumbers(testId: string) {
+  const testResponse = await fetch(`/api/tests/${testId}`, { cache: "no-store" });
+  const testPayload = (await testResponse.json()) as {
+    success?: boolean;
+    data?: { questions?: string[] };
+    message?: string;
+  };
+
+  if (!testResponse.ok || !testPayload.success) {
+    throw new Error(testPayload.message ?? "Unable to load test details.");
+  }
+
+  const questionIds = testPayload.data?.questions ?? [];
+
+  if (questionIds.length === 0) {
+    return [];
+  }
+
+  const questionResponse = await fetch("/api/questions/fetchBulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_ids: questionIds }),
+  });
+
+  const questionPayload = (await questionResponse.json()) as {
+    success?: boolean;
+    data?: QuestionRecord[];
+    message?: string;
+  };
+
+  if (!questionResponse.ok || !questionPayload.success) {
+    throw new Error(questionPayload.message ?? "Unable to load questions.");
+  }
+
+  const numbers = (questionPayload.data ?? [])
+    .map((question, index) => readQuestionNumber(question) ?? index + 1)
+    .filter((value): value is number => Number.isFinite(value));
+
+  return Array.from(new Set(numbers)).sort((a, b) => a - b);
+}
+
 export default function QuestionCreationClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -97,6 +165,18 @@ export default function QuestionCreationClient() {
   const [isSaving, setIsSaving] = useState(false);
   const subjectId = searchParams.get("subjectId") ?? "";
   const testName = searchParams.get("testName") ?? searchParams.get("name") ?? "";
+  const existingQuestionsQuery = useQuery({
+    queryKey: ["existing-test-questions", testId],
+    queryFn: () => loadExistingQuestionNumbers(testId),
+    enabled: Boolean(testId),
+  });
+  const allExistingQuestionNumbers = useMemo(
+    () =>
+      Array.from(
+        new Set([...(existingQuestionsQuery.data ?? []), ...completedQuestions]),
+      ).sort((a, b) => a - b),
+    [completedQuestions, existingQuestionsQuery.data],
+  );
 
   const getPreviewHref = () => {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -179,11 +259,12 @@ export default function QuestionCreationClient() {
     const loadingToastId = toast.loading("Importing questions...");
 
     try {
+      const sortedRows = [...rows].sort((a, b) => a.questionNo - b.questionNo);
       const response = await fetch("/api/questions/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          questions: rows.map((row) => buildImportQuestionPayload(row, testId, subjectId)),
+          questions: sortedRows.map((row) => buildImportQuestionPayload(row, testId, subjectId)),
         }),
       });
 
@@ -199,7 +280,7 @@ export default function QuestionCreationClient() {
         throw new Error(backendMessage || result.message || "Unable to import questions.");
       }
 
-      const importedNumbers = rows.map((row) => row.questionNo);
+      const importedNumbers = sortedRows.map((row) => row.questionNo);
       const nextCompletedQuestions = Array.from(
         new Set([...completedQuestions, ...importedNumbers]),
       ).sort((a, b) => a - b);
@@ -207,7 +288,7 @@ export default function QuestionCreationClient() {
       setCompletedQuestions(nextCompletedQuestions);
       setDrafts((current) => {
         const next = { ...current };
-        for (const row of rows) {
+        for (const row of sortedRows) {
           next[row.questionNo] = importedRowToDraft(row, subjectId);
         }
         return next;
@@ -353,7 +434,7 @@ export default function QuestionCreationClient() {
         templateHref="/question_book.xlsx"
         currentTotalQuestions={totalQuestions}
         currentTotalMarks={totalMarks}
-        existingQuestionNumbers={completedQuestions}
+        existingQuestionNumbers={allExistingQuestionNumbers}
         onIncreaseTotals={handleIncreaseTotals}
         onImportRows={handleImportRows}
       />
